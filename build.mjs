@@ -5,6 +5,8 @@ import { createRequire } from 'node:module';
 import './patch-maplibre.mjs';
 const require = createRequire(import.meta.url);
 const root = process.cwd();
+const trip = JSON.parse(await readFile('trip.json', 'utf8')).trip;
+const htmlEscape = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 await rm('docs', { recursive: true, force: true });
 await mkdir('docs/assets', { recursive: true });
 await cp('static', 'docs', { recursive: true });
@@ -31,9 +33,9 @@ await writeFile('docs/.nojekyll', '');
 await writeFile('docs/robots.txt', 'User-agent: *\nDisallow: /\n');
 await writeFile('docs/index.html', `<!doctype html>
 <html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="robots" content="noindex,nofollow"><meta name="description" content="10月3日至8日，东京、千叶与镰仓的六日旅行攻略。">
+<meta name="robots" content="noindex,nofollow"><meta name="description" content="${htmlEscape(trip.description)}">
 <meta name="referrer" content="strict-origin-when-cross-origin">
-<title>东京六日｜浅草、镰仓与千叶</title><link rel="icon" href="./icons/icon.svg">
+<title>${htmlEscape(trip.title)}</title><link rel="icon" href="./icons/icon.svg">
 <link rel="stylesheet" href="./assets/base.css"><link rel="stylesheet" href="./assets/main.css">
 <style>html,body{height:auto;min-height:100%;overflow:visible}body{overflow-x:clip}</style>
 </head><body><div id="root"></div><script type="module" src="./assets/main.js"></script></body></html>`);

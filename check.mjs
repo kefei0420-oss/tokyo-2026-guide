@@ -6,6 +6,9 @@ const data = JSON.parse(await readFile('trip.json', 'utf8'));
 assert.equal(data.days.length, 6);
 assert.equal(data.reservations.length, 5);
 assert.equal(data.places.length, 26);
+assert.equal(data.trip.title, '三只小猪🐷的东京之旅');
+assert.ok(!data.cartoApiKey);
+assert.equal(data.places.filter(p => p.image_url).length, 15);
 assert.equal(data.permissions.share_budget, false);
 const remote = process.env.GUIDE_URL;
 const server = remote ? null : spawn('python3', ['-m', 'http.server', '8768', '--bind', '127.0.0.1'], { stdio: 'ignore' });
@@ -29,12 +32,30 @@ try {
   await page.goto(url, { waitUntil: 'networkidle', timeout: 60000 });
   await page.getByRole('heading', { name: data.trip.title }).waitFor();
   assert.equal(await page.locator('button[aria-pressed]').count(), 7);
+  const seenPhotos = new Set();
   for (let i = 0; i < 6; i++) {
     await page.locator('button[aria-pressed]').nth(i + 1).click();
     assert.equal(await page.locator('button[aria-expanded="true"]').count(), 1);
     await page.locator('.leaflet-marker-icon').first().waitFor({ state: 'visible', timeout: 10000 });
+    for (const img of await page.locator('.shared-place-photo').all()) {
+      await img.scrollIntoViewIfNeeded(); await img.evaluate(el => el.decode());
+      seenPhotos.add(await img.getAttribute('src'));
+    }
+    assert.equal(await page.locator('.shared-place-details details[open]').count(), 0);
+    if (i === 0 || i === 5) {
+      const hk = i === 0 ? '香港国际机场 T2' : '香港国际机场 T1';
+      await page.locator(`.leaflet-marker-icon[title="${hk}"]`).waitFor();
+      const narita = page.locator('.leaflet-marker-icon[title="东京成田机场 T2"]');
+      if (!await narita.count()) await page.locator('.marker-cluster-wrapper').last().click();
+      await narita.waitFor(); await narita.click();
+      assert.ok(await page.locator('.leaflet-popup a[target="_blank"]').count());
+      await page.locator('.leaflet-popup-close-button').click();
+    }
   }
+  assert.equal(seenPhotos.size, 15);
+  assert.equal(await page.title(), data.trip.title);
   await page.locator('button[aria-pressed]').nth(4).click();
+  await page.getByRole('link', { name: 'うなぎ花菱', exact: true }).waitFor();
   await page.waitForLoadState('networkidle');
   assert.match(await page.locator('body').innerText(), /SHIBUYA SKY/);
   assert.ok(await page.locator('.leaflet-overlay-pane path').count(), 'day route line');
@@ -54,7 +75,7 @@ try {
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), 'mobile width');
   await page.screenshot({ path: '/tmp/tokyo-guide-mobile.png', fullPage: true });
   assert.deepEqual(errors, []); assert.deepEqual(badLocal, []); assert.deepEqual(backend, []);
-  console.log('PASS: 6 days, 5 bookings, map tiles/markers/routes, mobile width, no backend requests or browser errors.');
+  console.log('PASS: 6 days, 5 bookings, 15 inline photos, restaurant links, airport markers, map tiles/routes, mobile width, no backend requests or browser errors.');
 } catch (e) {
   console.error({ errors, badLocal, backend, mapResponses: mapResponses.slice(0, 5) });
   if (page) { await page.screenshot({ path: '/tmp/tokyo-guide-failure.png', fullPage: true }); console.error((await page.locator('body').innerText()).slice(0, 800)); }

@@ -17,7 +17,7 @@ import {
 } from 'lucide-react';
 import { createElement, useEffect, useRef } from 'react';
 import { renderIconMarkup } from '../utils/iconMarkup';
-import { MapContainer, Marker, Polyline, TileLayer, Tooltip, useMap } from 'react-leaflet';
+import { MapContainer, Marker, Polyline, Popup, TileLayer, Tooltip, useMap } from 'react-leaflet';
 import MarkerClusterGroup from 'react-leaflet-cluster';
 // MapView brings these sheets for the planner, and this page never mounts it.
 import 'leaflet.markercluster/dist/MarkerCluster.css';
@@ -30,7 +30,7 @@ import VectorBasemap from '../components/Map/VectorBasemap';
 import { useTranslation } from '../i18n';
 import { avatarSrc } from '../utils/avatarSrc';
 import { safeHexColor } from '../utils/safeColor';
-import { getMergedItems, getTransportForDay, hidesOnMiddleDay } from '../utils/dayMerge';
+import { getMergedItems, getSpanPhase, getTransportForDay, hidesOnMiddleDay } from '../utils/dayMerge';
 import { isDayInAccommodationRange } from '../utils/dayOrder';
 import { getFlightLegs, getTrainLegs } from '../utils/flightLegs';
 import { splitReservationDateTime } from '../utils/formatters';
@@ -185,10 +185,24 @@ export default function SharedTripPage() {
     dayPlaces.push(p);
   }
   const mapPlaces = selectedDay ? dayPlaces : (places || []).filter((p: any) => p?.lat && p?.lng);
+  const mapTransports = selectedDay
+    ? getTransportForDay({ reservations: reservations || [], dayId: selectedDay, dayAssignmentIds: [], days: sortedDays })
+    : reservations || [];
+  const transportPoints = Array.from(new globalThis.Map(mapTransports.flatMap((r: any) => {
+    const phase = selectedDay ? getSpanPhase(r, selectedDay) : 'single';
+    return (r.endpoints || []).filter((e: any) =>
+      Number.isFinite(e.lat) && Number.isFinite(e.lng) &&
+      (phase === 'single' || (phase === 'start' && e.role === 'from') || (phase === 'end' && e.role === 'to'))
+    ).map((e: any) => [`${r.id}-${e.sequence}`, {
+      ...e, id: `transport-${r.id}-${e.sequence}`, title: r.title,
+      category: { color: '#2563eb', icon: r.type === 'flight' ? 'Plane' : 'MapPin' },
+    }]);
+  })).values()) as any[];
+  const mapBoundsPlaces = [...mapPlaces, ...transportPoints];
 
   // Open framed on the trip's places instead of on Paris. MapContainer only reads center/zoom
   // at mount, so recomputing this per render is free — and the fit below takes over from there.
-  const framed = computeMapViewport(mapPlaces, {
+  const framed = computeMapViewport(mapBoundsPlaces, {
     tileSize: TILE_SIZE_RASTER,
     padding: { top: 40, right: 40, bottom: 40, left: 40 },
   });
@@ -222,7 +236,7 @@ export default function SharedTripPage() {
             style={{
               position: 'absolute',
               inset: 0,
-              backgroundImage: `url(${trip.cover_image.startsWith('http') ? trip.cover_image : trip.cover_image.startsWith('/') ? trip.cover_image : '/uploads/' + trip.cover_image})`,
+              backgroundImage: `url(${trip.cover_image})`,
               backgroundSize: 'cover',
               backgroundPosition: 'center',
               opacity: 0.15,
@@ -452,7 +466,7 @@ export default function SharedTripPage() {
                     referrerPolicy="strict-origin-when-cross-origin"
                   />
                 )}
-                <FitBoundsToPlaces places={mapPlaces} framedOnMount={framed !== null} />
+                <FitBoundsToPlaces places={mapBoundsPlaces} framedOnMount={framed !== null} />
                 {selectedDay && mapPlaces.length > 1 && (
                   <Polyline
                     positions={mapPlaces.map((p: any) => [p.lat, p.lng])}
@@ -469,6 +483,17 @@ export default function SharedTripPage() {
                   {mapPlaces.map((p: any) => (
                     <Marker key={p.id} position={[p.lat, p.lng]} icon={createMarkerIcon(p, dayOrderMap[p.id] ?? null)}>
                       <Tooltip>{p.name}</Tooltip>
+                    </Marker>
+                  ))}
+                  {transportPoints.map((p: any) => (
+                    <Marker key={p.id} title={p.name} position={[p.lat, p.lng]} icon={createMarkerIcon(p)}>
+                      <Tooltip>{p.name} · {p.local_date} {p.local_time}</Tooltip>
+                      <Popup>
+                        <strong>{p.name}</strong>
+                        <div>{p.local_date} {p.local_time}</div>
+                        <div>{p.title}</div>
+                        <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(p.name)}`} target="_blank" rel="noopener noreferrer">{t('planner.openGoogleMaps')}</a>
+                      </Popup>
                     </Marker>
                   ))}
                 </MarkerClusterGroup>
@@ -759,7 +784,7 @@ export default function SharedTripPage() {
                                 display: 'flex',
                                 alignItems: 'flex-start',
                                 gap: 10,
-                                padding: '6px 8px',
+                                padding: '14px 8px',
                                 borderRadius: 6,
                               }}
                             >
@@ -775,15 +800,7 @@ export default function SharedTripPage() {
                                   flexShrink: 0,
                                 }}
                               >
-                                {place.image_url ? (
-                                  <img
-                                    src={place.image_url}
-                                    alt=""
-                                    style={{ width: 28, height: 28, borderRadius: '50%', objectFit: 'cover' }}
-                                  />
-                                ) : (
-                                  <MapPin size={13} color="white" />
-                                )}
+                                <MapPin size={13} color="white" />
                               </div>
                               <div style={{ flex: 1, minWidth: 0 }}>
                                 <div
@@ -792,24 +809,24 @@ export default function SharedTripPage() {
                                 >
                                   {place.name}
                                 </div>
+                                {place.place_time && (
+                                  <span
+                                    className="text-[#6b7280]"
+                                    style={{
+                                      fontSize: 'calc(10px * var(--fs-scale-caption, 1))',
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      gap: 3,
+                                      flexShrink: 0,
+                                    }}
+                                  >
+                                    <Clock size={9} />
+                                    {place.place_time}
+                                    {place.end_time ? ` – ${place.end_time}` : ''}
+                                  </span>
+                                )}
                                 <SharedPlaceDetails place={place} assignmentNotes={item.data.notes} />
                               </div>
-                              {place.place_time && (
-                                <span
-                                  className="text-[#6b7280]"
-                                  style={{
-                                    fontSize: 'calc(10px * var(--fs-scale-caption, 1))',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: 3,
-                                    flexShrink: 0,
-                                  }}
-                                >
-                                  <Clock size={9} />
-                                  {place.place_time}
-                                  {place.end_time ? ` – ${place.end_time}` : ''}
-                                </span>
-                              )}
                             </div>
                           );
                         })}

@@ -46,3 +46,16 @@ export function linkHost(url: string): string {
     return url
   }
 }
+
+/** Keep the imported photo attribution out of the itinerary prose. */
+export function splitPhotoCredit(notes?: string | null) {
+  const text = notes?.trim() || ''
+  const marker = text.indexOf('\n\n照片：')
+  return marker < 0
+    ? { note: text, credit: '' }
+    : { note: text.slice(0, marker).trim(), credit: text.slice(marker).trim() }
+}
+
+export function sharedPhotoUrl(value?: string | null): string | null {
+  return value && (isHttpUrl(value) || /^\.?\/uploads\/[a-zA-Z0-9/_%.-]+$/.test(value)) ? value : null
+}

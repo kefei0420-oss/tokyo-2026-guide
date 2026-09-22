@@ -1,7 +1,10 @@
 import { Clock, ExternalLink, FileText, Globe, MapPin, Phone } from 'lucide-react'
+import Markdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
+import { sanitizedMarkdownComponents, sanitizedMarkdownPlugins } from '../../components/shared/markdownSanitize'
 import { useTranslation } from '../../i18n'
 import { getGoogleMapsUrlForPlace } from '../../components/Planner/placeGoogleMaps'
-import { formatDurationMinutes, isHttpUrl } from './sharedTripModel'
+import { formatDurationMinutes, isHttpUrl, sharedPhotoUrl, splitPhotoCredit } from './sharedTripModel'
 
 /**
  * The read-only detail of one stop on a shared plan (#2320).
@@ -20,6 +23,7 @@ import { formatDurationMinutes, isHttpUrl } from './sharedTripModel'
  */
 export interface SharedPlaceLike {
   name: string
+  image_url?: string | null
   address?: string | null
   description?: string | null
   notes?: string | null
@@ -42,7 +46,8 @@ export function SharedPlaceDetails({ place, assignmentNotes }: { place: SharedPl
   })
   const duration = formatDurationMinutes(place.duration_minutes)
   const dayNote = assignmentNotes?.trim() || null
-  const placeNote = place.notes?.trim() || null
+  const { note: placeNote, credit } = splitPhotoCredit(place.notes)
+  const photo = sharedPhotoUrl(place.image_url)
   const hasLinks = !!(website || phone || mapsUrl)
 
   return (
@@ -65,11 +70,25 @@ export function SharedPlaceDetails({ place, assignmentNotes }: { place: SharedPl
         </div>
       )}
       {placeNote && (
-        <div className="text-[#6b7280]" style={{ fontSize: 'calc(11px * var(--fs-scale-body, 1))', display: 'flex', alignItems: 'flex-start', gap: 4, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }} title={t('places.formNotes')}> {/* theme-lint-disable — public page, no user theme */}
+        <div className="text-[#6b7280]" style={{ fontSize: 'calc(11px * var(--fs-scale-body, 1))', display: 'flex', alignItems: 'flex-start', gap: 4, overflowWrap: 'anywhere' }} title={t('places.formNotes')}> {/* theme-lint-disable — public page, no user theme */}
           <FileText size={10} style={{ flexShrink: 0, marginTop: 2 }} />
-          <span>{placeNote}</span>
+          <div className="shared-place-prose [&_a]:text-blue-600 [&_a]:underline" style={{ minWidth: 0, lineHeight: 1.8, fontSize: 13 }}>
+            <Markdown remarkPlugins={[remarkGfm]} rehypePlugins={sanitizedMarkdownPlugins} components={{ ...sanitizedMarkdownComponents, p: ({ children }) => <p style={{ margin: 0 }}>{children}</p> }}>{placeNote}</Markdown>
+          </div>
         </div>
       )}
+      {photo && (
+        <figure style={{ margin: '10px 0 8px', width: '100%', maxWidth: 480 }}>
+          <a href={photo} target="_blank" rel="noopener noreferrer" aria-label={`${place.name} · 查看大图`}>
+            <img className="shared-place-photo" src={photo} alt={place.name} loading="lazy" decoding="async" style={{ display: 'block', width: '100%', height: 'auto', maxHeight: 320, objectFit: 'contain', borderRadius: 10, background: '#f3f4f6' }} />
+          </a>
+          {credit && <details style={{ marginTop: 5, color: '#6b7280', fontSize: 10, overflowWrap: 'anywhere' }}>
+            <summary style={{ cursor: 'pointer' }}>图片来源</summary>
+            <div style={{ whiteSpace: 'pre-line' }}><Markdown remarkPlugins={[remarkGfm]} rehypePlugins={sanitizedMarkdownPlugins} components={sanitizedMarkdownComponents}>{credit}</Markdown></div>
+          </details>}
+        </figure>
+      )}
+      {!photo && credit && <div style={{ fontSize: 10, whiteSpace: 'pre-line', overflowWrap: 'anywhere' }}>{credit}</div>}
       {(duration || hasLinks) && (
         <div className="text-[#6b7280]" style={{ fontSize: 'calc(10.5px * var(--fs-scale-caption, 1))', display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '2px 10px', marginTop: 1 }}> {/* theme-lint-disable — public page, no user theme */}
           {duration && (
