@@ -47,6 +47,7 @@ try {
   assert.match(bookings, /CROSS Suites/); assert.match(bookings, /illi Haku/);
   await page.getByRole('button', { name: '计划', exact: true }).click();
   await page.setViewportSize({ width: 390, height: 844 });
+  await page.reload({ waitUntil: 'networkidle' });
   await page.locator('button[aria-pressed]').nth(3).click();
   await page.waitForLoadState('networkidle');
   assert.match(await page.locator('body').innerText(), /千叶/);
